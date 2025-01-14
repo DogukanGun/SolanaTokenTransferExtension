@@ -7,7 +7,7 @@ use spl_tlv_account_resolution::{
 };
 use spl_transfer_hook_interface::instruction::ExecuteInstruction;
 
-use crate::WhiteList;
+use crate::{Config, WhiteList};
 #[derive(Accounts)]
 pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut)]
@@ -28,6 +28,8 @@ pub struct InitializeExtraAccountMetaList<'info> {
     pub system_program: Program<'info, System>,
     #[account(init_if_needed, seeds = [b"white_list"], bump, payer = payer, space = 400)]
     pub white_list: Account<'info, WhiteList>,
+    #[account(init_if_needed, seeds = [b"config"], bump, payer = payer, space = 400)]
+    pub config: Account<'info, Config>,
 }
 
 // Define extra account metas to store on extra_account_meta_list account
@@ -35,6 +37,7 @@ impl<'info> InitializeExtraAccountMetaList<'info> {
     #[interface(spl_transfer_hook_interface::initialize_extra_account_meta_list)]
     pub fn initialize_extra_account_meta_list(
         &mut self,
+        fee:u64
     ) -> Result<()> {
         // set authority field on white_list account as payer address
         self.white_list.authority = self.payer.key();
@@ -46,6 +49,10 @@ impl<'info> InitializeExtraAccountMetaList<'info> {
             &mut self.extra_account_meta_list.try_borrow_mut_data()?,
             &extra_account_metas
         )?;
+        self.config.set_inner(Config{
+            authority: self.payer.key(),
+            fee
+        });
         Ok(())
     }
 

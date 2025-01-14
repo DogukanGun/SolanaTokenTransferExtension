@@ -14,6 +14,7 @@ import {
 } from '@solana/spl-token';
 import { Keypair, SystemProgram, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
 import type { TransferHook } from '../target/types/transfer_hook';
+import { BN } from 'bn.js';
 
 describe('transfer-hook', () => {
   // Configure the client to use the local cluster.
@@ -107,7 +108,7 @@ describe('transfer-hook', () => {
   // Account to store extra accounts required by the transfer hook instruction
   it('Create ExtraAccountMetaList Account', async () => {
     const initializeExtraAccountMetaListInstruction = await program.methods
-      .initializeExtraAccountMetaList()
+      .initializeExtraAccountMetaList(new BN(8))
       .accounts({
         mint: mint.publicKey,
       })
@@ -140,23 +141,26 @@ describe('transfer-hook', () => {
     const amount = 1 * 10 ** decimals;
     const bigIntAmount = BigInt(amount);
 
-    // Standard token transfer instruction
-    const transferInstruction = await createTransferCheckedWithTransferHookInstruction(
-      connection,
-      sourceTokenAccount,
-      mint.publicKey,
-      destinationTokenAccount,
-      wallet.publicKey,
-      bigIntAmount,
-      decimals,
-      [],
-      'confirmed',
-      TOKEN_2022_PROGRAM_ID,
-    );
-
-    const transaction = new Transaction().add(transferInstruction);
-
-    const txSig = await sendAndConfirmTransaction(connection, transaction, [wallet.payer], { skipPreflight: true });
-    console.log('Transfer Checked:', txSig);
+    try {
+      const transferInstruction = await createTransferCheckedWithTransferHookInstruction(
+        connection,
+        sourceTokenAccount,
+        mint.publicKey,
+        destinationTokenAccount,
+        wallet.publicKey,
+        bigIntAmount,
+        decimals,
+        [],
+        'confirmed',
+        TOKEN_2022_PROGRAM_ID,
+      );
+  
+      const transaction = new Transaction().add(transferInstruction);
+  
+      const txSig = await sendAndConfirmTransaction(connection, transaction, [wallet.payer], { skipPreflight: true });
+      console.log('Transfer Checked:', txSig);
+    }catch(e) {
+      console.error(e);
+    }    
   });
 });

@@ -15,9 +15,10 @@ pub mod transfer_hook {
     use super::*;
 
     pub fn initialize_extra_account_meta_list(
-        ctx: Context<InitializeExtraAccountMetaList>
+        ctx: Context<InitializeExtraAccountMetaList>,
+        fee: u64
     ) -> Result<()> {
-        ctx.accounts.initialize_extra_account_meta_list()
+        ctx.accounts.initialize_extra_account_meta_list(fee)
     }
 
     #[interface(spl_transfer_hook_interface::execute)]
@@ -27,6 +28,10 @@ pub mod transfer_hook {
 
     pub fn add_to_whitelist(ctx: Context<AddToWhiteList>) -> Result<()> {
         ctx.accounts.add_to_whitelist()
+    }
+
+    pub fn update_fee(ctx: Context<UpdateFee>, fee: u64) -> Result<()> {
+        ctx.accounts.update_fee(fee)
     }
 }
 
