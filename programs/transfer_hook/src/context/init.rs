@@ -1,5 +1,7 @@
+use std::str::FromStr;
+
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::Mint;
+use anchor_spl::{associated_token::AssociatedToken, token::Token, token_interface::Mint};
 use spl_tlv_account_resolution::{
     account::ExtraAccountMeta,
     seeds::Seed,
@@ -7,12 +9,10 @@ use spl_tlv_account_resolution::{
 };
 use spl_transfer_hook_interface::instruction::ExecuteInstruction;
 
-use crate::{Config, WhiteList};
 #[derive(Accounts)]
 pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut)]
     payer: Signer<'info>,
-    pub mint: InterfaceAccount<'info, Mint>,
 
     /// CHECK: ExtraAccountMetaList Account, must use these seeds
     #[account(
@@ -25,45 +25,61 @@ pub struct InitializeExtraAccountMetaList<'info> {
         payer = payer
     )]
     pub extra_account_meta_list: AccountInfo<'info>,
-    pub system_program: Program<'info, System>,
-    #[account(init_if_needed, seeds = [b"white_list"], bump, payer = payer, space = 400)]
-    pub white_list: Account<'info, WhiteList>,
-    #[account(init_if_needed, seeds = [b"config"], bump, payer = payer, space = 400)]
-    pub config: Account<'info, Config>,
+    pub mint: InterfaceAccount<'info, Mint>,
+    pub system_program: Program<'info, System>
 }
 
 // Define extra account metas to store on extra_account_meta_list account
 impl<'info> InitializeExtraAccountMetaList<'info> {
-    #[interface(spl_transfer_hook_interface::initialize_extra_account_meta_list)]
-    pub fn initialize_extra_account_meta_list(
-        &mut self,
-        fee:u64
-    ) -> Result<()> {
-        // set authority field on white_list account as payer address
-        self.white_list.authority = self.payer.key();
-
-        let extra_account_metas = InitializeExtraAccountMetaList::extra_account_metas()?;
-
-        // initialize ExtraAccountMetaList account with extra accounts
-        ExtraAccountMetaList::init::<ExecuteInstruction>(
-            &mut self.extra_account_meta_list.try_borrow_mut_data()?,
-            &extra_account_metas
-        )?;
-        self.config.set_inner(Config{
-            authority: self.payer.key(),
-            fee
-        });
-        Ok(())
-    }
-
-    pub fn extra_account_metas(
-    ) -> Result<Vec<ExtraAccountMeta>> {
+    pub fn extra_account_metas() -> Result<Vec<ExtraAccountMeta>>  {
         Ok(
             vec![
+                // index 5, wrapped SOL mint
+                ExtraAccountMeta::new_with_pubkey(
+                    &Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(),
+                    false,
+                    false
+                )?,
+                // index 6, token program (for wsol token transfer)
+                ExtraAccountMeta::new_with_pubkey(&Token::id(), false, false)?,
+                // index 7, associated token program
+                ExtraAccountMeta::new_with_pubkey(&AssociatedToken::id(), false, false)?,
+                // index 8, delegate PDA
                 ExtraAccountMeta::new_with_seeds(
                     &[
                         Seed::Literal {
-                            bytes: "white_list".as_bytes().to_vec(),
+                            bytes: b"delegate".to_vec(),
+                        },
+                    ],
+                    false, // is_signer
+                    true // is_writable
+                )?,
+                // index 9, delegate wrapped SOL token account
+                ExtraAccountMeta::new_external_pda_with_seeds(
+                    7, // associated token program index
+                    &[
+                        Seed::AccountKey { index: 8 }, // owner index (delegate PDA)
+                        Seed::AccountKey { index: 6 }, // token program index
+                        Seed::AccountKey { index: 5 }, // wsol mint index
+                    ],
+                    false, // is_signer
+                    true // is_writable
+                )?,
+                // index 10, sender wrapped SOL token account
+                ExtraAccountMeta::new_external_pda_with_seeds(
+                    7, // associated token program index
+                    &[
+                        Seed::AccountKey { index: 3 }, // owner index
+                        Seed::AccountKey { index: 6 }, // token program index
+                        Seed::AccountKey { index: 5 }, // wsol mint index
+                    ],
+                    false, // is_signer
+                    true // is_writable
+                )?,
+                ExtraAccountMeta::new_with_seeds(
+                    &[
+                        Seed::Literal {
+                            bytes: b"counter".to_vec(),
                         },
                     ],
                     false, // is_signer

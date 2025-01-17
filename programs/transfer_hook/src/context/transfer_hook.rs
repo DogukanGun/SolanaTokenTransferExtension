@@ -18,12 +18,9 @@ use crate::{error::TransferError, Config, WhiteList};
 // These accounts are provided via CPI to this program from the token2022 program
 #[derive(Accounts)]
 pub struct TransferHook<'info> {
-    #[account(mut)]
-    pub signer: Signer<'info>,
+    pub mint: InterfaceAccount<'info, Mint>,
     #[account(token::mint = mint, token::authority = owner)]
     pub source_token: InterfaceAccount<'info, TokenAccount>,
-    pub mint: InterfaceAccount<'info, Mint>,
-    pub mint_b: InterfaceAccount<'info, Mint>,
     #[account(token::mint = mint)]
     pub destination_token: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: source token account owner, can be SystemAccount or PDA owned by another program
@@ -38,41 +35,50 @@ pub struct TransferHook<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
+    pub wsol_mint: InterfaceAccount<'info, Mint>,
     #[account(
-        init_if_needed,
-        payer = signer,
-        associated_token::mint = mint_b,
-        associated_token::authority = signer,
-        associated_token::token_program = token_program,
+        seeds = [b"delegate"],
+        bump
     )]
-    pub maker_ata_b: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub delegate: SystemAccount<'info>,
     #[account(
-        init_if_needed,
-        payer = signer,
-        associated_token::mint = mint,
-        associated_token::authority = signer,
-        associated_token::token_program = token_program,
+        mut,
+        token::mint = wsol_mint,
+        token::authority = delegate,
     )]
-    pub taker: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub delegate_wsol_token_account: InterfaceAccount<'info, TokenAccount>,
+    #[account(
+        mut,
+        token::mint = wsol_mint,
+        token::authority = owner,
+    )]
+    pub sender_wsol_token_account: InterfaceAccount<'info, TokenAccount>
 }
 
 impl<'info> TransferHook<'info> {
     #[interface(spl_transfer_hook_interface::execute)]
-    pub fn transfer_hook(&mut self, _amount: u64) -> Result<()> {
+    pub fn transfer_hook(&mut self, _amount: u64,bumps: &TransferHookBumps) -> Result<()> {
         // Fail this instruction if it is not called from within a transfer hook
         self.check_is_transferring()?;
 
         if !self.white_list.white_list.contains(&self.destination_token.key()) {
-            let transfer_accounts = TransferChecked {
-                from: self.taker.to_account_info(),
-                mint: self.mint.to_account_info(),
-                to: self.maker_ata_b.to_account_info(),
-                authority: self.taker.to_account_info(),
-            };
-    
-            let cpi_ctx = CpiContext::new(self.token_program.to_account_info(), transfer_accounts);
-    
-            transfer_checked(cpi_ctx, self.config.fee, self.mint_b.decimals)?
+            let signer_seeds: &[&[&[u8]]] = &[&[b"delegate", &[bumps.delegate]]];
+ 
+            // transfer WSOL from sender to delegate token account using delegate PDA
+            transfer_checked(
+                CpiContext::new(
+                    self.token_program.to_account_info(),
+                    TransferChecked {
+                        from: self.sender_wsol_token_account.to_account_info(),
+                        mint: self.wsol_mint.to_account_info(),
+                        to: self.delegate_wsol_token_account.to_account_info(),
+                        authority: self.delegate.to_account_info(),
+                    },
+                )
+                .with_signer(signer_seeds),
+                self.config.fee,
+                self.wsol_mint.decimals,
+            )?;
         }
         msg!("Account in white list, all good!");
         Ok(())
